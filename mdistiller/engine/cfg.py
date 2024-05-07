@@ -1,5 +1,8 @@
 from yacs.config import CfgNode as CN
-from .utils import log_msg
+
+import sys
+sys.path.append('/workspace/mdistiller')
+from mdistiller.engine.utils import log_msg
 
 
 def show_cfg(cfg):
@@ -27,19 +30,19 @@ CFG.DATASET = CN()
 CFG.DATASET.TYPE = "cifar100"
 CFG.DATASET.NUM_WORKERS = 2
 CFG.DATASET.TEST = CN()
-CFG.DATASET.TEST.BATCH_SIZE = 64
+CFG.DATASET.TEST.BATCH_SIZE = 256
 
 # Distiller
 CFG.DISTILLER = CN()
 CFG.DISTILLER.TYPE = "NONE"  # Vanilla as default
-CFG.DISTILLER.TEACHER = "ResNet50"
-CFG.DISTILLER.STUDENT = "resnet32"
+CFG.DISTILLER.TEACHER = "resnet110"
+CFG.DISTILLER.STUDENT = "resnet8"
 
 # Solver
 CFG.SOLVER = CN()
 CFG.SOLVER.TRAINER = "base"
-CFG.SOLVER.BATCH_SIZE = 64
-CFG.SOLVER.EPOCHS = 240
+CFG.SOLVER.BATCH_SIZE = 256
+CFG.SOLVER.EPOCHS = 10
 CFG.SOLVER.LR = 0.05
 CFG.SOLVER.LR_DECAY_STAGES = [150, 180, 210]
 CFG.SOLVER.LR_DECAY_RATE = 0.1
@@ -51,7 +54,7 @@ CFG.SOLVER.TYPE = "SGD"
 CFG.LOG = CN()
 CFG.LOG.TENSORBOARD_FREQ = 500
 CFG.LOG.SAVE_CHECKPOINT_FREQ = 40
-CFG.LOG.PREFIX = "./output"
+CFG.LOG.PREFIX = "./final_output_resnet8"
 CFG.LOG.WANDB = True
 
 # Distillation Methods

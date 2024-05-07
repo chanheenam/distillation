@@ -1,16 +1,16 @@
 EXPERIMENT:
   NAME: ""
-  TAG: "dkd,res110,res32,epoch_adaptive_data_adaptive_temperature_real_pls"
+  TAG: "dkd,res110,res8,simple_dkd3"
   PROJECT: "cifar100_baselines"
 DISTILLER:
   TYPE: "DKD"
   TEACHER: "resnet110"
-  STUDENT: "resnet32"
+  STUDENT: "resnet8"
 SOLVER:
-  BATCH_SIZE: 256
-  EPOCHS: 80
+  BATCH_SIZE: 128
+  EPOCHS: 70
   LR: 0.05
-  LR_DECAY_STAGES: [10, 20, 30, 40, 50, 60, 70]
+  LR_DECAY_STAGES: [10, 20, 30, 40, 50, 60]
   LR_DECAY_RATE: 0.5
   WEIGHT_DECAY: 0.0005
   MOMENTUM: 0.9

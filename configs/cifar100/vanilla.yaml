@@ -1,17 +1,17 @@
 EXPERIMENT:
   NAME: ""
-  TAG: "vanilla,res32x4,res8x4"
+  TAG: "vanilla, resnet8"
   PROJECT: "cifar100_baselines"
 DISTILLER:
   TYPE: "NONE"
-  TEACHER: "resnet32x4"
-  STUDENT: "resnet8x4"
+  TEACHER: "resnet110"
+  STUDENT: "resnet8"
 SOLVER:
   BATCH_SIZE: 64
-  EPOCHS: 240
+  EPOCHS: 60
   LR: 0.05
-  LR_DECAY_STAGES: [150, 180, 210]
-  LR_DECAY_RATE: 0.1
+  LR_DECAY_STAGES: [10, 20, 30, 40, 50]
+  LR_DECAY_RATE: 0.5
   WEIGHT_DECAY: 0.0005
   MOMENTUM: 0.9
   TYPE: "SGD"

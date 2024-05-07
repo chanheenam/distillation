@@ -21,6 +21,7 @@ def main(cfg, resume, opts):
         experiment_name = cfg.EXPERIMENT.TAG
     tags = cfg.EXPERIMENT.TAG.split(",")
     if opts:
+        print("opts exists")
         addtional_tags = ["{}:{}".format(k, v) for k, v in zip(opts[::2], opts[1::2])]
         tags += addtional_tags
         experiment_name += ",".join(addtional_tags)
@@ -39,7 +40,7 @@ def main(cfg, resume, opts):
     # init dataloader & models
     train_loader, val_loader, num_data, num_classes = get_dataset(cfg)
 
-    # vanilla
+    # vanilla training
     if cfg.DISTILLER.TYPE == "NONE":
         if cfg.DATASET.TYPE == "imagenet":
             model_student = imagenet_model_dict[cfg.DISTILLER.STUDENT](pretrained=False)
@@ -49,6 +50,7 @@ def main(cfg, resume, opts):
             model_student = cifar_model_dict[cfg.DISTILLER.STUDENT][0](
                 num_classes=num_classes
             )
+        # Vanillla Training의 경우니까 distiller = Vanilla
         distiller = distiller_dict[cfg.DISTILLER.TYPE](model_student)
     # distillation
     else:
@@ -58,11 +60,16 @@ def main(cfg, resume, opts):
             model_student = imagenet_model_dict[cfg.DISTILLER.STUDENT](pretrained=False)
         else:
             model_dict = tiny_imagenet_model_dict if cfg.DATASET.TYPE == "tiny_imagenet" else cifar_model_dict
-            net, pretrain_model_path = model_dict[cfg.DISTILLER.TEACHER]
+            
+            # take out teacher model function and ckpt path
+            teacher_model_func, pretrain_model_path = model_dict[cfg.DISTILLER.TEACHER]
+            
+            # raise error if teacher model does not have ckpt path
             assert (
                 pretrain_model_path is not None
             ), "no pretrain model for teacher {}".format(cfg.DISTILLER.TEACHER)
-            model_teacher = net(num_classes=num_classes)
+            
+            model_teacher = teacher_model_func(num_classes=num_classes)
             model_teacher.load_state_dict(load_checkpoint(pretrain_model_path)["model"])
             model_student = model_dict[cfg.DISTILLER.STUDENT][0](
                 num_classes=num_classes
@@ -72,9 +79,13 @@ def main(cfg, resume, opts):
                 model_student, model_teacher, cfg, num_data
             )
         else:
+            # Vanilla, Normal KD, DKD... etc
             distiller = distiller_dict[cfg.DISTILLER.TYPE](
                 model_student, model_teacher, cfg
             )
+            
+    # distiller is wrapped by calss torch.nn.DataParallel
+    # Thus, distiller.module is Distiller
     distiller = torch.nn.DataParallel(distiller.cuda())
 
     if cfg.DISTILLER.TYPE != "NONE":
@@ -87,7 +98,7 @@ def main(cfg, resume, opts):
             )
         )
 
-    # train
+    # trainer, DKD uses "base" Trainer
     trainer = trainer_dict[cfg.SOLVER.TRAINER](
         experiment_name, distiller, train_loader, val_loader, cfg
     )
@@ -98,7 +109,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser("training for knowledge distillation.")
-    parser.add_argument("--cfg", type=str, default="")
+    parser.add_argument("--cfg", type=str, default="configs/cifar100/dkd/res110_res8.yaml")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("opts", default=None, nargs=argparse.REMAINDER)
 

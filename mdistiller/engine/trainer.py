@@ -22,6 +22,8 @@ from .dot import DistillationOrientedTrainer
 class BaseTrainer(object):
     def __init__(self, experiment_name, distiller, train_loader, val_loader, cfg):
         self.cfg = cfg
+        
+        # distiller contains teacher model, student model and cfg
         self.distiller = distiller
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -37,7 +39,9 @@ class BaseTrainer(object):
 
     def init_optimizer(self, cfg):
         if cfg.SOLVER.TYPE == "SGD":
+            print("using SGD optimizer for now, change it if u dont want it")
             optimizer = optim.SGD(
+                # receives student model parameter
                 self.distiller.module.get_learnable_parameters(),
                 lr=cfg.SOLVER.LR,
                 momentum=cfg.SOLVER.MOMENTUM,
@@ -82,14 +86,18 @@ class BaseTrainer(object):
             self.distiller.load_state_dict(state["model"])
             self.optimizer.load_state_dict(state["optimizer"])
             self.best_acc = state["best_acc"]
+        
+        student_last_fc, teacher_last_fc = self.access_last_fc()
+        
         while epoch < self.cfg.SOLVER.EPOCHS + 1:
-            self.train_epoch(epoch)
+            self.train_epoch(epoch, student_last_fc, teacher_last_fc) #fix it whenever u need it
             epoch += 1
+        
         print(log_msg("Best accuracy:{}".format(self.best_acc), "EVAL"))
         with open(os.path.join(self.log_path, "worklog.txt"), "a") as writer:
             writer.write("best_acc\t" + "{:.2f}".format(float(self.best_acc)))
 
-    def train_epoch(self, epoch):
+    def train_epoch(self, epoch, student_last_fc=None, teacher_last_fc=None):
         lr = adjust_learning_rate(epoch, self.cfg, self.optimizer)
         train_meters = {
             "training_time": AverageMeter(),
@@ -104,7 +112,7 @@ class BaseTrainer(object):
         # train loops
         self.distiller.train()
         for idx, data in enumerate(self.train_loader):
-            msg = self.train_iter(data, epoch, train_meters)
+            msg = self.train_iter(data, epoch, train_meters, student_last_fc, teacher_last_fc)
             pbar.set_description(log_msg(msg, "TRAIN"))
             pbar.update()
         pbar.close()
@@ -150,7 +158,7 @@ class BaseTrainer(object):
                 student_state, os.path.join(self.log_path, "student_best")
             )
 
-    def train_iter(self, data, epoch, train_meters):
+    def train_iter(self, data, epoch, train_meters, student_last_fc, teacher_last_fc):
         self.optimizer.zero_grad()
         train_start_time = time.time()
         image, target, index = data
@@ -160,12 +168,17 @@ class BaseTrainer(object):
         target = target.cuda(non_blocking=True)
         index = index.cuda(non_blocking=True)
 
-        # forward
-        preds, losses_dict = self.distiller(image=image, target=target, epoch=epoch)
-
+        # calls forward_train function of DKD or other distiller
+        preds, losses_dict = self.distiller(image=image, 
+                                            target=target, 
+                                            epoch=epoch,
+                                            student_last_fc=student_last_fc,
+                                            teacher_last_fc=teacher_last_fc)
+        
         # backward
         loss = sum([l.mean() for l in losses_dict.values()])
         loss.backward()
+        
         self.optimizer.step()
         train_meters["training_time"].update(time.time() - train_start_time)
         # collect info
@@ -185,6 +198,30 @@ class BaseTrainer(object):
         )
         return msg
 
+    def access_last_fc(self):
+        student_model  = self.distiller.module.student
+        student_index = sum(1 for _ in student_model.named_modules()) - 1
+        
+        teacher_model  = self.distiller.module.teacher
+        teacher_index = sum(1 for _ in teacher_model.named_modules()) - 1
+        
+        module_index = 0
+        for name, module in student_model.named_modules():
+            if isinstance(module, nn.Linear) and module_index == student_index:
+                student_last_fc = module
+                break
+            module_index += 1
+            
+        module_index = 0
+        for name, module in teacher_model.named_modules():
+            if isinstance(module, nn.Linear) and module_index == teacher_index:
+                teacher_last_fc = module
+                break
+            module_index += 1
+        
+        print(student_last_fc, teacher_last_fc)
+        return student_last_fc, teacher_last_fc
+        
 
 class CRDTrainer(BaseTrainer):
     def train_iter(self, data, epoch, train_meters):

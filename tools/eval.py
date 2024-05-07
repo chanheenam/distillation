@@ -13,8 +13,9 @@ from mdistiller.engine.cfg import CFG as cfg
 
 
 if __name__ == "__main__":
+    # 사용자 설정
     parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--model", type=str, default="")
+    parser.add_argument("-m", "--model", type=str, default="resnet110")
     parser.add_argument("-c", "--ckpt", type=str, default="pretrain")
     parser.add_argument(
         "-d",
@@ -26,8 +27,10 @@ if __name__ == "__main__":
     parser.add_argument("-bs", "--batch-size", type=int, default=64)
     args = parser.parse_args()
 
+    
     cfg.DATASET.TYPE = args.dataset
     cfg.DATASET.TEST.BATCH_SIZE = args.batch_size
+    # imagenet의 경우 (이거 안씀)
     if args.dataset == "imagenet":
         val_loader = get_imagenet_val_loader(args.batch_size)
         if args.ckpt == "pretrain":
@@ -35,6 +38,7 @@ if __name__ == "__main__":
         else:
             model = imagenet_model_dict[args.model](pretrained=False)
             model.load_state_dict(load_checkpoint(args.ckpt)["model"])
+    # cifar100, tiny_imagenet의 경우
     elif args.dataset in ("cifar100", "tiny_imagenet"):
         train_loader, val_loader, num_data, num_classes = get_dataset(cfg)
         model_dict = tiny_imagenet_model_dict if args.dataset == "tiny_imagenet" else cifar_model_dict
