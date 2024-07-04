@@ -54,7 +54,7 @@ CFG.SOLVER.TYPE = "SGD"
 CFG.LOG = CN()
 CFG.LOG.TENSORBOARD_FREQ = 500
 CFG.LOG.SAVE_CHECKPOINT_FREQ = 40
-CFG.LOG.PREFIX = "./final_output_resnet8"
+CFG.LOG.PREFIX = "./paper_output"
 CFG.LOG.WANDB = True
 
 # Distillation Methods

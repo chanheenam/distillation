@@ -152,7 +152,7 @@ class ResNet(nn.Module):
         if depth != 110:
             print("only saving or loading student model init weight")
             #torch.save(self.state_dict(), "model_init_weight/resnet8")
-            self.load_state_dict(torch.load("model_init_weight/resnet8"))
+            self.load_state_dict(torch.load("model_init_weight/resnet32"))
 
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None

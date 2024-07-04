@@ -66,27 +66,6 @@ def fill_values(lst, down_range, up_range, down_scalar, up_scalar):
             result.append(1)
     return torch.tensor(result)
 
-
-def prune_batch_logits(tensor, prune_percent):
-    k = max(1, int(tensor.shape[1] * prune_percent))  
-    threshold_values, _ = torch.kthvalue(tensor, k, dim=1)
-    for i in range(tensor.shape[0]):
-        tensor[i][tensor[i] <= threshold_values[i]] = -200
-
-    pruned_indices = []
-    for row in tensor:
-        row_indices = torch.nonzero(row <= -190).squeeze(dim=1)
-        pruned_indices.append(row_indices.tolist())
-    return tensor, pruned_indices
-
-
-def prune_tensor_rows(pruned_tensor, indices):
-    # pruned_tensor = tensor.clone()  
-    for i, idx in enumerate(indices):
-        pruned_tensor[i][idx] = -200  
-    return pruned_tensor
-
-
 # 이 부분은 현재 teacher logit과 target을 보고 있다. target이 아니라 stduent logit으로 
 def get_temperature_rate(logits_teacher, target, temperature):
     logit_target_list = compare_logit_target(logits_teacher, target)

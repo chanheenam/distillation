@@ -1,0 +1,1 @@
+data adaptive temperature는 0.3, 0.7, 0.8, 1.2가 가장 좋은듯?

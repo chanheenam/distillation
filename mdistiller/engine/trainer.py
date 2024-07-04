@@ -6,6 +6,8 @@ import torch.nn as nn
 import torch.optim as optim
 from collections import OrderedDict
 import getpass
+import pickle
+
 from tensorboardX import SummaryWriter
 from .utils import (
     AverageMeter,
@@ -29,6 +31,9 @@ class BaseTrainer(object):
         self.val_loader = val_loader
         self.optimizer = self.init_optimizer(cfg)
         self.best_acc = -1
+        
+        self.ce_loss_list = list()
+        self.kl_loss_list = list()
 
         username = getpass.getuser()
         # init loggers
@@ -80,6 +85,7 @@ class BaseTrainer(object):
 
     def train(self, resume=False):
         epoch = 1
+        
         if resume:
             state = load_checkpoint(os.path.join(self.log_path, "latest"))
             epoch = state["epoch"] + 1
@@ -96,6 +102,14 @@ class BaseTrainer(object):
         print(log_msg("Best accuracy:{}".format(self.best_acc), "EVAL"))
         with open(os.path.join(self.log_path, "worklog.txt"), "a") as writer:
             writer.write("best_acc\t" + "{:.2f}".format(float(self.best_acc)))
+        
+        ce_list_file = os.getcwd() + '/loss_list/regular_ce_list'
+        with open(ce_list_file, 'wb') as f:
+            pickle.dump(self.ce_loss_list, f)
+        
+        kl_list_file = os.getcwd() + '/loss_list/regular_kl_list'
+        with open(kl_list_file, 'wb') as f:
+            pickle.dump(self.kl_loss_list, f)
 
     def train_epoch(self, epoch, student_last_fc=None, teacher_last_fc=None):
         lr = adjust_learning_rate(epoch, self.cfg, self.optimizer)
@@ -174,6 +188,9 @@ class BaseTrainer(object):
                                             epoch=epoch,
                                             student_last_fc=student_last_fc,
                                             teacher_last_fc=teacher_last_fc)
+        
+        self.ce_loss_list.append(losses_dict["loss_ce"].item())
+        self.kl_loss_list.append(losses_dict["loss_kd"].item())
         
         # backward
         loss = sum([l.mean() for l in losses_dict.values()])

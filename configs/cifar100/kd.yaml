@@ -1,16 +1,16 @@
 EXPERIMENT:
   NAME: ""
-  TAG: "kd,res110,res8,logit_pruning3->2->1"
+  TAG: "kd,res110,res8_lp_ 0.3, 0.2, 0.1, 0.0"
   PROJECT: "cifar100_baselines"
 DISTILLER:
   TYPE: "KD"
   TEACHER: "resnet110"
-  STUDENT: "resnet8"
+  STUDENT: "resnet32"
 SOLVER:
-  BATCH_SIZE: 128
-  EPOCHS: 70
+  BATCH_SIZE: 64
+  EPOCHS: 80
   LR: 0.05
-  LR_DECAY_STAGES: [10, 20, 30, 40, 50, 60]
+  LR_DECAY_STAGES: [20, 30, 40, 50, 60]
   LR_DECAY_RATE: 0.5
   WEIGHT_DECAY: 0.0005
   MOMENTUM: 0.9

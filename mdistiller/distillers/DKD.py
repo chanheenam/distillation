@@ -3,33 +3,29 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ._base import Distiller
-from .utils import weighted_cross_entropy_loss, prune_batch_logits, prune_tensor_rows, weight_row_wise_loss, weighted_l2_loss
-"""
-dkd의 특성상 non target class의 영향력이 늘어나는데
-non target class중에서 쓰레기값이 많다는 것이 내 이론
-더군다나 temperature 하이퍼 파라미터의 영향으로 쓰레기값의 value가 커질 수도 있다...
-이를 위해서 하위 20%의 logit값들을 아예 지워버리고 student에서도 마찬가지로 지워 버린다.     
+from .utils import weight_row_wise_loss, weighted_l2_loss
+from .utils_for_paper import prune_batch_logits, \
+    prune_tensor_rows, weighted_cross_entropy_loss, kl_divergence_loss
 
 
-"""
 def dkd_loss(logits_student, logits_teacher, target, alpha, beta, temperature, temperature_vector, pruning_rate):
     
     # prune logit, low class value of teacher
-    # logits_teacher, pruned_indices = prune_batch_logits(logits_teacher, pruning_rate)
-    # logits_student = prune_tensor_rows(logits_student, pruned_indices)
+    logits_teacher, pruned_indices = prune_batch_logits(logits_teacher, pruning_rate)
+    logits_student = prune_tensor_rows(logits_student, pruned_indices)
     
     # get ground truth mask and opposed mask, student_logit is only for shape
     gt_mask = _get_gt_mask(logits_student, target)
     other_mask = _get_other_mask(logits_student, target)
     
-    # get smoothened softmax value
-    pred_student = F.softmax(logits_student / temperature, dim=1)
-    pred_teacher = F.softmax(logits_teacher / temperature, dim=1)
-    
     # # data adaptive temperature의 경우의 수 
-    # temperature_vector = temperature_vector.to("cuda:0")
-    # pred_student = F.softmax(logits_student / temperature_vector.unsqueeze(1), dim=1)
-    # pred_teacher = F.softmax(logits_teacher / temperature_vector.unsqueeze(1), dim=1)
+    if temperature_vector is not None:
+        temperature_vector = temperature_vector.to("cuda:0")
+        pred_student = F.softmax(logits_student / temperature_vector.unsqueeze(1), dim=1)
+        pred_teacher = F.softmax(logits_teacher / temperature_vector.unsqueeze(1), dim=1)
+    else:
+        pred_student = F.softmax(logits_student / temperature, dim=1)
+        pred_teacher = F.softmax(logits_teacher / temperature, dim=1)
     
     # [real target에 대해서 student의 output, 나머지 확률의 합]
     # e.g. tensor([[0.8000, 0.2000], [0.7000, 0.3000], [0.2000, 0.8000]])
@@ -41,31 +37,42 @@ def dkd_loss(logits_student, logits_teacher, target, alpha, beta, temperature, t
     
     # divide by batch size since kl_div is the loss sum of every batch 
     tckd_loss = (
-        F.kl_div(log_pred_student, pred_teacher, size_average=False)
+        kl_divergence_loss(pred_teacher, log_pred_student)
         * (temperature**2)
         / target.shape[0]
     )
-
-    pred_teacher_part2 = F.softmax(
-        logits_teacher / temperature - 1000.0 * gt_mask, dim=1
-    )
-    log_pred_student_part2 = F.log_softmax(
-        logits_student / temperature - 1000.0 * gt_mask, dim=1
-    )
     
-    # # data adaptive temperature의 경우의 수
-    # pred_teacher_part2 = F.softmax(
-    #     logits_teacher / temperature_vector.unsqueeze(1) - 1000.0 * gt_mask, dim=1
-    # )
-    # log_pred_student_part2 = F.log_softmax(
-    #     logits_student / temperature_vector.unsqueeze(1) - 1000.0 * gt_mask, dim=1
-    # )
+    indices = torch.nonzero(gt_mask)
+        
+    if temperature_vector is None:
+        logits_teacher = logits_teacher / temperature
+        logits_student = logits_student / temperature
+        
+        for idx in indices:
+            logits_teacher[idx[0], idx[1]] = -1000
+            logits_student[idx[0], idx[1]] = -1000
+        
+        pred_teacher_part2 = F.softmax(logits_teacher, dim=1)
+        log_pred_student_part2 = F.log_softmax(logits_student, dim=1)
+    else:
+        logits_teacher = logits_teacher / temperature_vector.unsqueeze(1)
+        logits_student = logits_student / temperature_vector.unsqueeze(1)
+
+        for idx in indices:
+            logits_teacher[idx[0], idx[1]] = -1000
+            logits_student[idx[0], idx[1]] = -1000
+            
+        pred_teacher_part2 = F.softmax(logits_teacher, dim=1)
+        log_pred_student_part2 = F.log_softmax(logits_student, dim=1)
     
     nckd_loss = (
-        F.kl_div(log_pred_student_part2, pred_teacher_part2, size_average=False)
+        kl_divergence_loss(pred_teacher_part2, log_pred_student_part2)
         * (temperature**2)
         / target.shape[0]
     )
+    
+    
+
     return alpha * tckd_loss + beta * nckd_loss, gt_mask
 
 
@@ -125,23 +132,29 @@ class DKD(Distiller):
             logits_teacher, _ = self.teacher(image)
 
         # cross entropy losses, target is vector
-        loss_ce, temperature_vector =  weighted_cross_entropy_loss(logits_student, target, logits_teacher, self.temperature)
+        loss_ce, temperature_rate_vector =  weighted_cross_entropy_loss(logits_teacher, logits_student, target)
         loss_ce = self.ce_loss_weight * loss_ce
-                
-        # if kwargs["epoch"]<10:
-        #     self.temperature = 4.3
-        # if kwargs["epoch"] >=10 and kwargs["epoch"] <20:
-        #     self.temperature = 4.15
-        # if kwargs["epoch"]>=20:
-        #     self.temperature = 4
         
-        if kwargs["epoch"]<10:
+        # epoch_adaptive = [0.1, -0.1] 
+        # max_temp = self.temperature + epoch_adaptive[0] * self.temperature
+        # min_temp = self.temperature + epoch_adaptive[1] * self.temperature
+        # diff = max_temp - min_temp
+        # temperature = max_temp - diff*(kwargs["epoch"])/80
+        
+        temperature = self.temperature
+        
+        if kwargs["epoch"]<20:
+            temperature_vector = None
+            pruning_rate = 0.0
+        elif kwargs["epoch"] >=20 and kwargs["epoch"] < 40:
+            temperature_vector = None
             pruning_rate = 0.1
-        if kwargs["epoch"] >=10 and kwargs["epoch"] <20:
+        elif kwargs["epoch"]>=40 and kwargs["epoch"] < 60:
+            temperature_vector = None
             pruning_rate = 0.2
-        if kwargs["epoch"]>=20:
+        elif kwargs["epoch"]>=40:
+            temperature_vector = None
             pruning_rate = 0.3
-        
             
         loss_dkd, gt_mask = dkd_loss(
             logits_student,
@@ -149,11 +162,11 @@ class DKD(Distiller):
             target,
             self.alpha,
             self.beta,
-            self.temperature,
+            temperature,
             temperature_vector,
             pruning_rate
         )
-        
+                
         loss_dkd = min(kwargs["epoch"] / self.warmup, 1.0) * loss_dkd
         
         # rate_loss = target_rate_loss(kwargs["student_last_fc"], 
@@ -170,5 +183,5 @@ class DKD(Distiller):
             # "loss_rate": rate_loss,
             # "weight_row_loss": weight_row_loss
         }
-
+                
         return logits_student, losses_dict
