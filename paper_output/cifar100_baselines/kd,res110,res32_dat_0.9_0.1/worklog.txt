@@ -1,9 +1,0 @@
--------------------------
-epoch: 1
-lr: 0.05
-train_acc: 8.51
-train_loss: nan
-test_acc: 14.48
-test_acc_top5: 40.32
-test_loss: 4.12
--------------------------
